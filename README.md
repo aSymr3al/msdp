@@ -50,7 +50,8 @@ python3 tasks/search_papers.py \
   --output artifacts/search_papers.json
 ```
 
-- `tasks/search_and_download.py`: orchestration task that runs multi-engine search and attempts to download discovered PDFs, logging per-step timing and download success/failure title summaries.
+- `tools/pdf_download_tool.py`: downloader tool that handles direct PDF URLs and landing-page URLs by discovering PDF links with robust per-item error traces.
+- `tasks/search_and_download.py`: orchestration task that runs multi-engine search and then calls `tools/pdf_download_tool.py`, logging per-step timing and download success/failure title summaries.
 
 Example:
 ```bash
