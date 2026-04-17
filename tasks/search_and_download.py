@@ -7,7 +7,6 @@ import argparse
 import datetime as dt
 import json
 import logging
-import re
 import subprocess
 import sys
 import tempfile
@@ -15,13 +14,12 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 PROTOCOL_VERSION = "1.0"
 TOOL_NAME = "tasks.search_and_download"
 ROOT = Path(__file__).resolve().parents[1]
 SEARCH_TASK = ROOT / "tasks" / "search_papers.py"
+DOWNLOAD_TOOL = ROOT / "tools" / "pdf_download_tool.py"
 
 
 def utc_now() -> str:
@@ -78,11 +76,6 @@ def write_output(path: str, payload: dict[str, Any]) -> None:
         Path(path).write_text(rendered + "\n", encoding="utf-8")
 
 
-def sanitize_filename(value: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "_", value.strip().lower())
-    return cleaned.strip("_.")[:120] or "paper"
-
-
 def build_search_command(args: argparse.Namespace, output_file: Path) -> list[str]:
     cmd = [
         sys.executable,
@@ -122,25 +115,35 @@ def run_search(args: argparse.Namespace) -> tuple[int, dict[str, Any] | None, st
         return proc.returncode, payload, stderr, duration_ms
 
 
-def download_pdf(url: str, destination: Path, timeout: int) -> tuple[bool, str | None, int]:
-    req = Request(url, headers={"User-Agent": "msdp-search-and-download/1.0", "Accept": "application/pdf,*/*"})
-    started = time.monotonic()
-    try:
-        with urlopen(req, timeout=timeout) as response:  # nosec B310
-            status = response.getcode() or 0
-            if status >= 400:
-                return False, f"HTTP {status}", int((time.monotonic() - started) * 1000)
-            content = response.read()
-            if not content:
-                return False, "Empty response body", int((time.monotonic() - started) * 1000)
-            destination.write_bytes(content)
-            return True, None, int((time.monotonic() - started) * 1000)
-    except HTTPError as exc:
-        return False, f"HTTP {exc.code}", int((time.monotonic() - started) * 1000)
-    except URLError as exc:
-        return False, f"URL error: {exc.reason}", int((time.monotonic() - started) * 1000)
-    except Exception as exc:  # noqa: BLE001
-        return False, str(exc), int((time.monotonic() - started) * 1000)
+def run_download_tool(candidates: list[dict[str, Any]], args: argparse.Namespace) -> tuple[int, dict[str, Any] | None, str, int]:
+    with tempfile.TemporaryDirectory() as td:
+        input_file = Path(td) / "download_input.json"
+        output_file = Path(td) / "download_output.json"
+        request_payload = {
+            "items": candidates,
+            "download_dir": args.download_dir,
+        }
+        input_file.write_text(json.dumps(request_payload), encoding="utf-8")
+        cmd = [
+            sys.executable,
+            str(DOWNLOAD_TOOL),
+            "--input",
+            str(input_file),
+            "--output",
+            str(output_file),
+            "--timeout",
+            str(args.timeout),
+        ]
+        started = time.monotonic()
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        duration_ms = int((time.monotonic() - started) * 1000)
+        payload = None
+        if output_file.exists():
+            try:
+                payload = json.loads(output_file.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                payload = None
+        return proc.returncode, payload, proc.stderr.strip(), duration_ms
 
 
 def execute(args: argparse.Namespace) -> int:
@@ -173,46 +176,30 @@ def execute(args: argparse.Namespace) -> int:
     if not isinstance(candidates, list):
         candidates = []
 
-    download_dir = Path(args.download_dir)
-    download_dir.mkdir(parents=True, exist_ok=True)
+    d_rc, download_payload, download_stderr, download_ms = run_download_tool(candidates, args)
+    logging.info("Download step completed in %d ms (rc=%d)", download_ms, d_rc)
 
-    downloaded: list[dict[str, Any]] = []
-    failed: list[dict[str, Any]] = []
+    if download_stderr:
+        logging.warning("Download tool stderr: %s", download_stderr)
 
-    for idx, candidate in enumerate(candidates, start=1):
-        title = (candidate.get("title") or f"paper_{idx}").strip()
-        pdf_url = candidate.get("pdf_url")
+    if download_payload is None:
+        errors.append({"code": "DOWNLOAD_PARSE", "message": "Could not parse download output", "provider": "pdf_download_tool", "retryable": False, "context": {}})
+        download_data = {"downloaded": [], "failed": [], "download_summary": {}}
+    else:
+        download_data = download_payload.get("data", {})
 
-        if not pdf_url:
-            failed.append({"title": title, "url": None, "reason": "Missing pdf_url"})
-            logging.info("Skip download (missing pdf_url): %s", title)
-            continue
+    downloaded = download_data.get("downloaded", []) if isinstance(download_data.get("downloaded"), list) else []
+    failed = download_data.get("failed", []) if isinstance(download_data.get("failed"), list) else []
+    summary = dict(download_data.get("download_summary", {}) if isinstance(download_data.get("download_summary"), dict) else {})
+    summary["search_duration_ms"] = search_ms
+    summary["download_duration_ms"] = download_ms
+    summary["total_candidates"] = len(candidates)
 
-        file_stem = sanitize_filename(title)
-        target = download_dir / f"{idx:03d}_{file_stem}.pdf"
-
-        ok, reason, elapsed_ms = download_pdf(str(pdf_url), target, args.timeout)
-        if ok:
-            downloaded.append({"title": title, "url": pdf_url, "path": str(target), "duration_ms": elapsed_ms})
-            logging.info("Downloaded '%s' in %d ms -> %s", title, elapsed_ms, target)
-        else:
-            failed.append({"title": title, "url": pdf_url, "reason": reason or "Unknown error", "duration_ms": elapsed_ms})
-            logging.warning("Failed '%s' in %d ms: %s", title, elapsed_ms, reason)
-
-    success_titles = [d["title"] for d in downloaded]
-    failed_titles = [f["title"] for f in failed]
+    success_titles = [d.get("title") for d in downloaded if isinstance(d, dict) and d.get("title")]
+    failed_titles = [f.get("title") for f in failed if isinstance(f, dict) and f.get("title")]
     logging.info("Download summary: successful=%d failed=%d", len(downloaded), len(failed))
     logging.info("Successfully downloaded titles: %s", success_titles)
     logging.info("Failed titles: %s", failed_titles)
-
-    summary = {
-        "success_count": len(downloaded),
-        "failure_count": len(failed),
-        "success_titles": success_titles,
-        "failed_titles": failed_titles,
-        "search_duration_ms": search_ms,
-        "total_candidates": len(candidates),
-    }
 
     data = {
         "search": {
@@ -233,7 +220,13 @@ def execute(args: argparse.Namespace) -> int:
     else:
         if rc == 10:
             errors.extend(search_payload.get("errors", []))
-        status = "ok"
+        if download_payload and isinstance(download_payload.get("errors"), list):
+            errors.extend(download_payload.get("errors", []))
+        if d_rc not in {0, 10}:
+            errors.append({"code": "DOWNLOAD_FAILED", "message": f"pdf_download_tool exited with {d_rc}", "provider": "pdf_download_tool", "retryable": False, "context": {"return_code": d_rc}})
+            status = "error"
+        else:
+            status = "ok"
 
     envelope = make_envelope(run_id=run_id, started_at=started_at, status=status, data=data, errors=errors)
     write_output(args.output, envelope)

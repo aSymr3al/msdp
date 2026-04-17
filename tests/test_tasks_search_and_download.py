@@ -44,16 +44,36 @@ class SearchAndDownloadTaskTests(unittest.TestCase):
 
         module.run_search = mock_run_search
 
-        calls: list[tuple[str, Path, int]] = []
+        calls: list[list[dict[str, object]]] = []
 
-        def mock_download(url: str, destination: Path, timeout: int):
-            calls.append((url, destination, timeout))
-            if url.endswith("one.pdf"):
-                destination.write_bytes(b"%PDF-1.7")
-                return True, None, 10
-            return False, "HTTP 404", 11
+        def mock_run_download_tool(candidates: list[dict[str, object]], _args):
+            calls.append(candidates)
+            return (
+                10,
+                {
+                    "status": "ok",
+                    "data": {
+                        "downloaded": [
+                            {"title": "Paper One", "url": "https://example.org/one.pdf", "path": "/tmp/001_paper_one.pdf", "duration_ms": 10}
+                        ],
+                        "failed": [
+                            {"title": "Paper Two", "url": None, "reason": "Missing source URL", "duration_ms": 0},
+                            {"title": "Paper Three", "url": "https://example.org/three.pdf", "reason": "HTTP 404", "duration_ms": 11},
+                        ],
+                        "download_summary": {
+                            "success_count": 1,
+                            "failure_count": 2,
+                            "success_titles": ["Paper One"],
+                            "failed_titles": ["Paper Two", "Paper Three"],
+                        },
+                    },
+                    "errors": [{"code": "PARTIAL_DOWNLOAD_FAILURE", "message": "Some downloads failed"}],
+                },
+                "",
+                18,
+            )
 
-        module.download_pdf = mock_download
+        module.run_download_tool = mock_run_download_tool
 
         with tempfile.TemporaryDirectory() as td:
             out = Path(td) / "out.json"
@@ -71,10 +91,10 @@ class SearchAndDownloadTaskTests(unittest.TestCase):
                 log_level="INFO",
             )
             rc = module.execute(args)
-            self.assertEqual(rc, 0)
+            self.assertEqual(rc, 10)
             payload = json.loads(out.read_text(encoding="utf-8"))
 
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 1)
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["data"]["download_summary"]["success_count"], 1)
         self.assertEqual(payload["data"]["download_summary"]["failure_count"], 2)
