@@ -22,4 +22,4 @@ MSDP now includes **10 popular academic search engines/providers** with a consis
 Shared helper utilities live in `tools/common_search_tool.py`.
 
 ## Tool-Specific Standard
-- `doc/google-scholar-search-tool-standard.md`: Input/output standard for the initial search tool in Protocol v1 envelope format.
+- `docs/google-scholar-search-tool-standard.md`: Input/output standard for the initial search tool in Protocol v1 envelope format.
