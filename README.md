@@ -64,3 +64,19 @@ python3 tasks/search_and_download.py \
   --download-dir artifacts/pdfs \
   --output artifacts/search_and_download.json
 ```
+
+- `tasks/search_download_and_parse.py`: end-to-end orchestration task that runs multi-engine search, downloads candidate PDFs, then parses each downloaded PDF with `tools/pdf_parse_tool.py`, returning one Protocol v1 envelope with search/download/parse summaries.
+
+Example:
+```bash
+python3 tasks/search_download_and_parse.py \
+  --keywords "graph neural networks" "molecular property prediction" \
+  --year-start 2020 \
+  --year-end 2026 \
+  --top-k 5 \
+  --engines arxiv openalex semantic_scholar \
+  --download-dir artifacts/pdfs \
+  --max-pages 5 \
+  --output artifacts/search_download_and_parse.json
+```
+
