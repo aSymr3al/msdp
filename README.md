@@ -22,7 +22,8 @@ MSDP includes **10 popular academic search engines/providers** with a consistent
 Shared helper utilities live in `tools/common_search_tool.py`.
 
 ## Implemented Parse Tool (Protocol v1 Envelope)
-- `tools/pdf_parse_tool.py`: parses a single PDF and extracts important information (title, DOI, year, abstract, contact emails, detected sections) with typed error handling.
+- `tools/pdf_parse_tool.py`: parses a single PDF and extracts important information (title, DOI, year, abstract, contact emails, detected sections) with typed error handling using **PyMuPDF** (current default backend).
+- `tools/pdf_parse_tool_pypdf_legacy.py`: legacy parser variant kept for backward compatibility with **pypdf**.
 
 Example:
 ```bash

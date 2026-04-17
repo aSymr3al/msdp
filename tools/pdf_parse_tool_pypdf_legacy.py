@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""PDF parser adapter for extracting key manuscript information (MSDP Protocol v1).
-
-Primary backend: PyMuPDF (fitz), selected for strong overall extraction quality and speed.
-"""
+"""Legacy PDF parser adapter based on pypdf (MSDP Protocol v1)."""
 
 from __future__ import annotations
 
@@ -19,8 +16,8 @@ from common_search_tool import (
     utc_now,
 )
 
-TOOL_NAME = "parse.pdf_key_info"
-PROVIDER = "pdf_parser"
+TOOL_NAME = "parse.pdf_key_info_legacy"
+PROVIDER = "pdf_parser_pypdf_legacy"
 MAX_TEXT_LEN = 40000
 
 
@@ -35,20 +32,16 @@ def parse_args() -> argparse.Namespace:
 
 def extract_text_from_pdf(pdf_path: Path, max_pages: int) -> str:
     try:
-        import pymupdf
+        from pypdf import PdfReader
     except ImportError as exc:  # pragma: no cover - environment dependent
-        raise RuntimeError("Missing dependency 'pymupdf'. Install with: pip install pymupdf") from exc
+        raise RuntimeError("Missing dependency 'pypdf'. Install with: pip install pypdf") from exc
 
-    document = pymupdf.open(str(pdf_path))
+    reader = PdfReader(str(pdf_path))
     snippets: list[str] = []
-    try:
-        for page_index in range(min(max_pages, len(document))):
-            page = document[page_index]
-            page_text = page.get_text(sort=True) or ""
-            if page_text.strip():
-                snippets.append(page_text)
-    finally:
-        document.close()
+    for page in reader.pages[:max_pages]:
+        page_text = page.extract_text() or ""
+        if page_text.strip():
+            snippets.append(page_text)
     return "\n".join(snippets)
 
 

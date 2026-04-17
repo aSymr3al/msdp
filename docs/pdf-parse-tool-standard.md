@@ -2,11 +2,14 @@
 
 This document defines the input/output contract for:
 `tools/pdf_parse_tool.py`.
+Legacy compatibility implementation is also available at:
+`tools/pdf_parse_tool_pypdf_legacy.py`.
 
 ## 1) Tool Identity
 - **Tool name**: `parse.pdf_key_info`
 - **Language**: Python 3.x
 - **Invocation style**: CLI with direct PDF input and JSON output
+- **Default parser backend**: `pymupdf` (PyMuPDF)
 
 ## 2) CLI Contract
 ```bash
