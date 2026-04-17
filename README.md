@@ -7,7 +7,7 @@ Before implementation, requirements and interoperability standards are captured 
 - `docs/implementation-plan.md`
 
 ## Implemented Search Tools (Protocol v1)
-MSDP now includes **10 popular academic search engines/providers** with a consistent CLI and envelope format:
+MSDP includes **10 popular academic search engines/providers** with a consistent CLI and envelope format:
 1. `tools/google_scholar_search.py`
 2. `tools/arxiv_search.py`
 3. `tools/semantic_scholar_search.py`
@@ -20,6 +20,17 @@ MSDP now includes **10 popular academic search engines/providers** with a consis
 10. `tools/biorxiv_search.py`
 
 Shared helper utilities live in `tools/common_search_tool.py`.
+
+## Implemented Parse Tool (Protocol v1 Envelope)
+- `tools/pdf_parse_tool.py`: parses a single PDF and extracts important information (title, DOI, year, abstract, contact emails, detected sections) with typed error handling.
+
+Example:
+```bash
+python3 tools/pdf_parse_tool.py \
+  --input-pdf artifacts/raw/sample.pdf \
+  --output - \
+  --max-pages 5
+```
 
 ## Tool-Specific Standard
 - `docs/google-scholar-search-tool-standard.md`: Input/output standard for the initial search tool in Protocol v1 envelope format.

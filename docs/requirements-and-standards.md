@@ -5,8 +5,9 @@ MSDP (Manuscript Search, Download, and Parse) is a modular toolkit that coordina
 1. discover candidate manuscripts from modern web and academic search engines,
 2. normalize and deduplicate metadata,
 3. download content from source-specific websites,
-4. record robust execution status and errors,
-5. expose stable machine interfaces for orchestration by other programs.
+4. parse PDF content for key manuscript fields,
+5. record robust execution status and errors,
+6. expose stable machine interfaces for orchestration by other programs.
 
 This document defines the cross-tool requirements and interoperability standards before implementation.
 
@@ -51,19 +52,25 @@ Required behaviors:
 - integrity checks (content-type, size bounds, checksum),
 - resumable downloads where possible.
 
-### FR-4: Error Handling and Recovery
+### FR-4: PDF Parsing Tool
+- parse one PDF input per invocation,
+- extract key manuscript information in a planned output format,
+- tolerate partially extractable PDFs and still emit structured output,
+- classify parser failures under typed errors (`PARSE`, `VALIDATION`, `INTERNAL`).
+
+### FR-5: Error Handling and Recovery
 - typed errors (`NETWORK`, `AUTH`, `RATE_LIMIT`, `NOT_FOUND`, `PARSE`, `VALIDATION`, `INTERNAL`),
 - retry policy based on error class,
 - dead-letter queue for persistent failures,
 - partial-progress persistence.
 
-### FR-5: Programmatic Invocation
+### FR-6: Programmatic Invocation
 Other programs must be able to call tools via:
 - CLI contract,
 - JSON over stdio,
 - optional HTTP/gRPC wrapper later (same core schema).
 
-### FR-6: Auditability
+### FR-7: Auditability
 - structured logs and run manifests,
 - reproducible run configuration snapshot,
 - per-item lifecycle state tracking.
@@ -140,7 +147,21 @@ Other programs must be able to call tools via:
 }
 ```
 
-### 5.4 Error Schema
+### 5.4 PDF Parse Result Schema
+```json
+{
+  "input_pdf": "artifacts/raw/<candidate_id>.pdf",
+  "title": "...",
+  "doi": "10.xxxx/xxxx",
+  "year": 2024,
+  "abstract": "...",
+  "contact_emails": ["author@example.edu"],
+  "detected_sections": ["abstract", "introduction", "methods", "results", "conclusion"],
+  "text_preview": "..."
+}
+```
+
+### 5.5 Error Schema
 ```json
 {
   "code": "RATE_LIMIT",
@@ -160,17 +181,20 @@ Other programs must be able to call tools via:
 
 ### 6.1 CLI Standard
 All tools must support:
-- `--input <json file | ->`
 - `--output <json file | ->`
-- `--config <path>`
 - `--run-id <uuid>`
-- `--log-level <debug|info|warn|error>`
-- exit codes:
-  - `0` success,
-  - `10` partial success,
-  - `20` validation error,
-  - `30` provider/network failure,
-  - `40` internal error.
+- `--log-level <debug|info|warn|error>` (optional where applicable)
+
+For tool-specific inputs:
+- search/downloader tools: `--input <json file | ->`
+- PDF parser: `--input-pdf <path/to/file.pdf>` and optional `--max-pages <1..50>`
+
+Exit codes:
+- `0` success,
+- `10` partial success,
+- `20` validation error,
+- `30` provider/network failure,
+- `40` internal/parse failure.
 
 ### 6.2 Stdio JSON RPC-like Contract
 Request:
@@ -194,14 +218,14 @@ Response uses the shared envelope.
 ---
 
 ## 7) Adapter Plugin Protocol
-Each adapter (search or downloader) must implement:
+Each adapter (search, downloader, or parser) must implement:
 - `capabilities()` -> declares supported filters/features,
 - `validate_input(payload)` -> strict validation,
 - `execute(payload, context)` -> returns envelope-compliant data,
 - `healthcheck()` -> quick readiness check.
 
 Adapter manifest fields:
-- `name`, `version`, `type` (`search`/`download`),
+- `name`, `version`, `type` (`search`/`download`/`parse`),
 - `supported_domains` or `supported_engines`,
 - `auth_requirements`,
 - `rate_limit_profile`.
@@ -220,6 +244,7 @@ Adapter manifest fields:
 Recommended directory contract:
 - `artifacts/raw/` downloaded binaries,
 - `artifacts/normalized/` canonical metadata,
+- `artifacts/parsed/` parser output JSON,
 - `artifacts/logs/` structured logs,
 - `artifacts/manifests/` run manifests,
 - `artifacts/dead-letter/` persistent failures.
@@ -237,9 +262,9 @@ Manifests include run config hash, tool versions, and summary metrics.
 
 ---
 
-## 11) Acceptance Criteria (for initial baseline)
-1. At least two search adapters and two downloader adapters integrated behind common contracts.
-2. End-to-end run from query -> candidates -> download results with structured manifest.
+## 11) Acceptance Criteria (Initial Baseline)
+1. Search, downloader, and parser adapters integrated behind common contracts.
+2. End-to-end run from query -> candidates -> download results -> parse results with structured manifest.
 3. Simulated transient failure recovers via retry; permanent failure lands in dead-letter.
 4. All tools pass schema validation tests and contract tests.
 5. CLI and stdio invocation both supported for at least one adapter of each type.
@@ -250,4 +275,4 @@ Manifests include run config hash, tool versions, and summary metrics.
 - protocol transport for remote orchestration (HTTP vs gRPC),
 - canonical dedup scoring algorithm and thresholds,
 - persistent store choice (SQLite vs Postgres) for larger-scale runs,
-- parser stage boundaries (out of scope for current planning phase).
+- parser confidence scoring and section-detection strategy for scanned PDFs.
