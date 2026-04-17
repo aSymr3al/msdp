@@ -23,3 +23,18 @@ Shared helper utilities live in `tools/common_search_tool.py`.
 
 ## Tool-Specific Standard
 - `docs/google-scholar-search-tool-standard.md`: Input/output standard for the initial search tool in Protocol v1 envelope format.
+
+
+## Tasks
+- `tasks/search_papers.py`: ready-to-run aggregator task that executes selected search tools, merges outputs, and emits a deduplicated Protocol v1 JSON envelope suitable for downstream scripts.
+
+Example:
+```bash
+python3 tasks/search_papers.py \
+  --keywords "graph neural networks" "molecular property prediction" \
+  --year-start 2020 \
+  --year-end 2026 \
+  --top-k 5 \
+  --engines arxiv semantic_scholar openalex \
+  --output artifacts/search_papers.json
+```
