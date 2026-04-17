@@ -36,7 +36,6 @@ python3 tools/pdf_parse_tool.py \
 ## Tool-Specific Standard
 - `docs/google-scholar-search-tool-standard.md`: Input/output standard for the initial search tool in Protocol v1 envelope format.
 
-
 ## Tasks
 - `tasks/search_papers.py`: ready-to-run aggregator task that executes selected search tools, merges outputs, and emits a deduplicated Protocol v1 JSON envelope suitable for downstream scripts.
 
@@ -49,4 +48,18 @@ python3 tasks/search_papers.py \
   --top-k 5 \
   --engines arxiv semantic_scholar openalex \
   --output artifacts/search_papers.json
+```
+
+- `tasks/search_and_download.py`: orchestration task that runs multi-engine search and attempts to download discovered PDFs, logging per-step timing and download success/failure title summaries.
+
+Example:
+```bash
+python3 tasks/search_and_download.py \
+  --keywords "graph neural networks" "molecular property prediction" \
+  --year-start 2020 \
+  --year-end 2026 \
+  --top-k 5 \
+  --engines arxiv openalex semantic_scholar \
+  --download-dir artifacts/pdfs \
+  --output artifacts/search_and_download.json
 ```
